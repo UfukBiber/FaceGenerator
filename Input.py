@@ -1,40 +1,29 @@
 import tensorflow as tf 
 import os 
 
-# def PreprocessImages(oldDir, newDir, imgSize):
-#     if not (os.path.exists(newDir)):
-#         os.mkdir(newDir)
-#     print("PreprocessingImages")
-#     imgPaths = os.listdir(oldDir)
-#     length = len(imgPaths)
-#     i = 1
-#     for imgPath in imgPaths:
-#         oldImgPath = os.path.join(oldDir, imgPath)
-#         newImgPath = os.path.join(newDir, imgPath)
-#         img = tf.io.read_file(oldImgPath)
-#         img = tf.io.decode_jpeg(img, 3)
-#         img = tf.image.resize(img, (64, 64))
-#         tf.keras.utils.save_img(newImgPath, img)
-#         print("%i / %i is processed"%(i, length), end = "\r")
-#         i += 1
-#     print("Done")
+IMAGES_DIR = r"/home/ufuk/Desktop/img_align_celeba"
+
+IMAGE_SIZE = (64, 64)
 
 
 
-def ReadPathDataset(dir):
-    print("Reading image paths")
-    imgPaths = os.listdir(dir)[0:100000]
+def ReadPaths(dir):
+    imgPaths = os.listdir(dir)
     for i in range(len(imgPaths)):
         imgPaths[i] = os.path.join(dir, imgPaths[i])
-    ds = tf.data.Dataset.from_tensor_slices(imgPaths)
-    print("Done")
-    return ds
+    return imgPaths
 
-def ReadImgsFromPaths(imgPath, imgSize, channels = 3):
+def ReadImgsFromPaths(imgPath):
     img = tf.io.read_file(imgPath)
-    img = tf.io.decode_jpeg(img, channels)
-    img = tf.image.resize(img, imgSize)
-    img = tf.image.convert_image_dtype(img, tf.float32) / 255.
+    img = tf.io.decode_jpeg(img, channels = 3)
+    img = tf.image.resize(img, IMAGE_SIZE)
+    img = tf.cast(img, tf.float32)
+    img = img / 255.
     return img 
 
+def GetTrainDs():
+    imagePaths = ReadPaths(IMAGES_DIR)[:60000]
+    train_ds = tf.data.Dataset.from_tensor_slices((imagePaths), name = "train_ds")
+    train_ds = train_ds.map(lambda path:ReadImgsFromPaths(path), num_parallel_calls=4)
+    return train_ds 
 

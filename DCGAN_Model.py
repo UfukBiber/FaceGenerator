@@ -1,6 +1,5 @@
 import tensorflow as tf
-import numpy as np
-import Input
+import os 
 
 LATENT_DIM = 128
 
@@ -37,78 +36,69 @@ class DCGAN(tf.keras.models.Model):
             ],
             name="generator",
         )
-        self.latentDim = latentDim
-        
+        self.discriminator.trainable = False 
+        self.gan = tf.keras.Sequential([
+            self.generator,
+            self.discriminator
+        ])
+
+        self.latent_dim = latentDim
     def compile(self):
         super(DCGAN, self).compile()
-        self.d_optimizer = tf.keras.optimizers.Adam()
-        self.g_optimizer = tf.keras.optimizers.Adam()
-        self.loss_fn = tf.keras.losses.BinaryCrossentropy()
-        self.discLossMet = tf.keras.metrics.Mean(name='disc_loss')
-        self.genLossMet = tf.keras.metrics.Mean(name='gen_loss')
+        self.disc_opt = tf.keras.optimizers.Adam(1e-4)
+        self.gen_opt = tf.keras.optimizers.Adam(1e-4)
+        self.loss = tf.keras.losses.BinaryCrossentropy()
+        self.disc_loss_metric = tf.keras.metrics.Mean(name = "disc_met")
+        self.gen_loss_metric = tf.keras.metrics.Mean(name = "gen_met")
+        self.disc_acc_metrics = tf.keras.metrics.Accuracy(name = "disc_accuracy")
+    
+    @property
+    def metrics(self):
+        return [self.disc_loss_metric, self.gen_loss_metric]
 
     @tf.function
-    def train_step(self, realImgBatch):
-        batchSize = tf.shape(realImgBatch)[0]
-        realLabel = tf.ones((batchSize, 1))
-        fakeLabel = tf.zeros((batchSize, 1))
-        latentVector = tf.random.normal((batchSize, self.latentDim))
-        genImgBatch = self.generator(latentVector)
-        with tf.GradientTape() as discTape:
-            realOutput = self.discriminator(realImgBatch)
-            fakeOutput = self.discriminator(genImgBatch)
-            realLoss = self.loss_fn(realLabel, realOutput)
-            fakeLoss = self.loss_fn(fakeLabel, fakeOutput)
-            discLoss = (realLoss + fakeLoss) * 0.5
-        gradients = discTape.gradient(discLoss, self.discriminator.trainable_variables)
-        self.d_optimizer.apply_gradients(zip(gradients, self.discriminator.trainable_variables))
-
-        latentVector = tf.random.normal((batchSize, self.latentDim))
-        with tf.GradientTape() as genTape:
-            genImg = self.generator(latentVector)
-            fakeOut = self.discriminator(genImg)
-            genLoss = self.loss_fn(realLabel, fakeOut)
-        gradients = genTape.gradient(genLoss, self.generator.trainable_variables)
-        self.g_optimizer.apply_gradients(zip(gradients, self.generator.trainable_variables))
+    def train_step(self, real_img_batch):
+        batch_size = tf.shape(real_img_batch)[0]
+        real_label = tf.ones(shape = (batch_size, 1), dtype = tf.float32)
+        fake_label = tf.zeros(shape = (batch_size, 1), dtype = tf.float32)
+        labels = tf.concat([real_label, fake_label], axis = 0)
+        latent_vector = tf.random.normal(shape = (batch_size, self.latent_dim))
+        gen_img_batch = self.generator(latent_vector)
+        imgs = tf.concat([real_img_batch, gen_img_batch], axis = 0)
+        with tf.GradientTape() as tape:
+            predictions = self.discriminator(imgs)
+            disc_loss = self.loss(labels, predictions)
+        gradients = tape.gradient(disc_loss, self.discriminator.trainable_variables)
+        self.disc_opt.apply_gradients(zip(gradients, self.discriminator.trainable_variables))
 
 
-        self.discLossMet(discLoss)
-        self.genLossMet(genLoss)
-
-    def train(self, ds, epochs):
-        self.discLossMet.reset_states()
-        for epoch in range(epochs):
-            i = 0
-            for realImgBatch in ds:
-                self.train_step(realImgBatch)
-                i+=1
-                print("%i / %i  %i / %i  %2f  %2f"%(epoch, epochs,i, 6000, self.discLossMet.result(), self.genLossMet.result()), end = "\r")
+        latent_vector = tf.random.normal(shape = (batch_size, self.latent_dim))
+        with tf.GradientTape() as tape:
+            gen_img_batch = self.generator(latent_vector)
+            predictions = self.discriminator(gen_img_batch)
+            gen_loss = self.loss(real_label, predictions)
+        gradients = tape.gradient(gen_loss, self.generator.trainable_variables)
+        self.gen_opt.apply_gradients(zip(gradients, self.generator.trainable_variables))
+        self.disc_loss_metric.update_state(disc_loss)
+        self.gen_loss_metric.update_state(gen_loss)
+        return {"disc_met":self.disc_loss_metric.result(), "gen_met":self.gen_loss_metric.result()}
 
     def SaveModel(self):
-        self.generator.save_weights("DCGAN\Generator")
-        self.discriminator.save_weights("DCGAN\Discriminator")
-
-    def LoadModel(self):
-        try:
-            self.generator.load_weights("DCGAN\Generator")
-            self.discriminator.load_weights("DCGAN\Discriminator")
-        except:
-            pass
+        self.generator.save_weights(os.path.join("DCGAN", "MODEL"))
+        self.discriminator.save_weights(os.path.join("DCGAN", "MODEL"))
 
 
-class GANMonitor(tf.keras.callbacks.Callback):
-    def __init__(self, num_img=3, latent_dim=128):
-        self.num_img = num_img
-        self.latent_dim = latent_dim
-
+class CallBack(tf.keras.callbacks.Callback):
+    def __init__(self):
+        super().__init__()
+    
     def on_epoch_end(self, epoch, logs=None):
-        random_latent_vectors = tf.random.normal(shape=(self.num_img, self.latent_dim))
-        generated_images = self.model.generator(random_latent_vectors)
+        latent_vectors = tf.random.normal(shape=(3, self.model.latent_dim))
+        generated_images = self.model.generator(latent_vectors)
         generated_images *= 255
         generated_images.numpy()
-        for i in range(self.num_img):
+        for i in range(3):
             img = tf.keras.preprocessing.image.array_to_img(generated_images[i])
-            img.save("GeneratedImages\generated_img_%03d_%d.png" % (epoch, i))
+            img.save(os.path.join("GeneratedImages", "generated_img_%03d_%d.png" % (epoch, i)))
+        
         self.model.SaveModel()
-
-
