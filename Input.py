@@ -3,7 +3,7 @@ import os
 
 IMAGES_DIR = r"/home/ufuk/Desktop/img_align_celeba"
 
-IMAGE_SIZE = (64, 64)
+IMAGE_SIZE = (128, 128)
 
 
 
@@ -22,7 +22,7 @@ def ReadImgsFromPaths(imgPath):
     return img 
 
 def GetTrainDs():
-    imagePaths = ReadPaths(IMAGES_DIR)[:60000]
+    imagePaths = ReadPaths(IMAGES_DIR)[:30000]
     train_ds = tf.data.Dataset.from_tensor_slices((imagePaths), name = "train_ds")
     train_ds = train_ds.map(lambda path:ReadImgsFromPaths(path), num_parallel_calls=4)
     return train_ds 

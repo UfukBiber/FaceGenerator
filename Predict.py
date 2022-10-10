@@ -1,5 +1,5 @@
 import tensorflow as tf 
-from DCGAN_Model2 import GAN
+from DCGAN import GAN
 import matplotlib.pyplot as plt 
 
 
